@@ -3,7 +3,7 @@ from customtkinter import filedialog
 import json
 import os
 from pathlib import Path
-import os
+import sys
 from sys import platform
 import pandas as pd
 from dataclasses import dataclass
@@ -16,11 +16,14 @@ import io
 import win32api
 import win32print
 import tempfile
+from PIL import ImageTk
 
-base_dir = os.path.dirname(os.path.abspath(__file__))
-template_path = os.path.join(base_dir, 'templateNew.docx')
-#template_path = "template.docx"
 
+
+#base_dir = os.path.dirname(os.path.abspath(__file__))
+template_path = "" #os.path.join(base_dir, 'templateNew.docx')
+icon_path = ""
+tempDir = None
 filesPath = []
 
 labels = {}
@@ -45,6 +48,12 @@ class App(ctk.CTk):
 
         self.title("Labels Creator")
         self.geometry("800x600")
+        self.iconpath = ImageTk.PhotoImage(file=icon_path)
+        self.wm_iconbitmap()
+        self.iconphoto(False, self.iconpath)        
+
+        self.protocol("WM_DELETE_WINDOW", self.on_close)
+
         self.dataPath = f'{Path.home()}/AppData/Roaming/Štítky-Generátor/generator_stitku_data.json'
         self.data = self.getData()
 
@@ -57,6 +66,13 @@ class App(ctk.CTk):
 
         self.createUI()
 
+    def on_close(self):
+        global tempDir
+        try:
+            tempDir.cleanup()
+            self.destroy()
+        except:
+            self.destroy()
 
     def createUI(self):
         self.grid_rowconfigure((2,4), weight=1)
@@ -72,9 +88,8 @@ class App(ctk.CTk):
         #Úspěšně nahráno
 
         self.upload_frame = ctk.CTkFrame(self)
-        self.upload_frame.grid(row=2, column=0, padx=200, pady=20, sticky="ew", columnspan=2)
+        self.upload_frame.grid(row=2, column=0, padx=150, pady=20, sticky="ew", columnspan=2)
         self.upload_frame.grid_columnconfigure((0,1,2), weight=1)
-        #self.upload_frame.grid_rowconfigure((0, 1), weight=1)
 
         self.viewMSG(self.upload_frame, "Nenahráno", 20, "red")
 
@@ -108,19 +123,19 @@ class App(ctk.CTk):
 
         for type in labels.keys():
             self.MSG = ctk.CTkButton(self.upload_frame, text=f"Tisk {type}", command=lambda idx=index: printLabels(self, idx), corner_radius=20)
-            self.MSG.grid(row=0, column=index, padx=20, pady=20, sticky="ew", columnspan=1)
+            self.MSG.grid(row=0, column=index, padx=15, pady=20, sticky="ew")
             index += 1
 
         self.printTitle = ctk.CTkLabel(self.upload_frame, text="Vybrat tiskárnu", font=("Roboto", 15), text_color="white", wraplength=320)
         self.printTitle.grid(row=1, column=0, padx=150, pady=20, sticky="ew", columnspan=3)
-        self.combobox = ctk.CTkComboBox(self.upload_frame, values=printers, corner_radius=20, width=100)
+        self.combobox = ctk.CTkComboBox(self.upload_frame, values=printers, corner_radius=20)
         self.combobox.set(def_printer)
-        self.combobox.grid(row=2, column=1, padx=20, pady=20, sticky="ew", columnspan=1)
+        self.combobox.grid(row=2, column=0, padx=70, pady=20, sticky="ew", columnspan=3)
 
     def getData(self):
         if os.path.exists(self.dataPath):
             try:
-                with open(self.dataPath, "w") as f:
+                with open(self.dataPath, "r") as f:
                     return json.load(f)
             except:
                 return {}
@@ -147,7 +162,6 @@ class App(ctk.CTk):
 
         self.viewMSG(self.previews_frame, self.previewsPath, 15, "white")
 
-
     def main(self):
         if self.hasOrders and self.hasPreviews:
             sort_data(self, self.previewsPath, self.ordersPath)
@@ -155,14 +169,14 @@ class App(ctk.CTk):
             self.viewMSG(self.upload_frame, "Nelze generovat, výkresy nebo objednávky nejsou k dispozici ", 20, "red")
 
 def sort_data(ui, previewsPath, ordersPath):
-    #try:
+    try:
         search_column = ['VÝROBEK', 'POČET', 'MÍSTO']
         column_index = []
         
         df = pd.read_excel(ordersPath)
         num_row = df.shape[0]
 
-        sort_index = df.index[df.iloc[:, 0] == "VÝROBEK"]     ### Změníme na "VÝKON"
+        sort_index = df.index[df.iloc[:, 0] == "VÝROBEK"]     ### Změníme na "VÝKON"/"VÝROBEK"
         df_head = df.iloc[sort_index[0], :].tolist()
 
         for x in search_column:
@@ -191,12 +205,10 @@ def sort_data(ui, previewsPath, ordersPath):
         labels[data[0].place] = data
 
         renderMain(ui)
-    #except Exception as e:
-    #    print(e)
-    #    ui.viewMSG(ui.upload_frame, e, 20, "red") #"Chyba při generování
+    except Exception as e:
+        ui.viewMSG(ui.upload_frame, f"Chyba: {e}", 20, "red") #"Chyba při generování
 
 def render_to_document(tpl, context):
-    #tpl = DocxTemplate(template_path)
     tpl.render(context)
     buffer = io.BytesIO()
     tpl.save(buffer)
@@ -205,8 +217,8 @@ def render_to_document(tpl, context):
 
 
 def renderMain(ui: App):
+    global tempDir
     tempDir = tempfile.TemporaryDirectory()
-
     for type, data in labels.items():
         first_page = True
         composer = None
@@ -238,44 +250,31 @@ def renderMain(ui: App):
     
 
 def printLabels(ui: App, type):
-    filename = filesPath[type]
-    select_printer = ui.combobox.get()
-    win32print.SetDefaultPrinter(select_printer)
-    win32api.ShellExecute(
-        0,
-        "printto",
-        filename,
-        '"%s"' % win32print.GetDefaultPrinter(),
-        ".",
-        0
-    )
+    try:     
+        filename = filesPath[type]
+        select_printer = ui.combobox.get()
+        win32print.SetDefaultPrinter(select_printer)
+        win32api.ShellExecute(
+            0,
+            "printto",
+            filename,
+            '"%s"' % win32print.GetDefaultPrinter(),
+            ".",
+            0
+        )
+    except Exception as e:
+        ui.viewMSG(ui.upload_frame, f"Chyba: {e}", 20, "red")
 
-
-
-
-            
-        
-        
 
 if __name__ == "__main__":
-    #test()
-    '''
-    if platform == "linux" or platform == "linux2":
-        change_dir_to = os.chdir(Path.home())
-        try:
-            os.mkdir(".YourAppName")
-        except:
-            pass
-        changed_dir_to = os.chdir(".YourAppName")
-    elif platform == "win64":
-        # Windows...
-        change_dir_to = os.chdir(f'{Path.home()}/AppData/Roaming')
-        try:
-            os.mkdir("Štítky-Generátor")
-        except:
-            pass
-        changed_dir_to = os.chdir("Štítky-Generátor")
-    '''
+    try:
+        base_path = sys._MEIPASS
+    except Exception:
+        base_path = os.path.abspath(".")
+
+    template_path = os.path.join(base_path, "templateNew.docx")
+    icon_path = os.path.join(base_path, "icon.ico")
+
     change_dir_to = os.chdir(f'{Path.home()}/AppData/Roaming')
     try:
         os.mkdir("Štítky-Generátor")
@@ -283,4 +282,5 @@ if __name__ == "__main__":
         pass
     changed_dir_to = os.chdir("Štítky-Generátor")
     app = App()
+    #app.protocol("WM_DELETE_WINDOW", on_close(app))
     app.mainloop()
