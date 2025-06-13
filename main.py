@@ -7,7 +7,7 @@ import sys
 from sys import platform
 import pandas as pd
 from dataclasses import dataclass
-import math
+import numpy as np
 from docxtpl import DocxTemplate, InlineImage
 from docx import Document
 from docx.shared import Mm
@@ -20,8 +20,7 @@ from PIL import ImageTk
 
 
 
-#base_dir = os.path.dirname(os.path.abspath(__file__))
-template_path = "" #os.path.join(base_dir, 'templateNew.docx')
+template_path = ""
 icon_path = ""
 tempDir = None
 filesPath = []
@@ -125,12 +124,13 @@ class App(ctk.CTk):
             self.MSG = ctk.CTkButton(self.upload_frame, text=f"Tisk {type}", command=lambda idx=index: printLabels(self, idx), corner_radius=20)
             self.MSG.grid(row=0, column=index, padx=15, pady=20, sticky="ew")
             index += 1
-
+        '''
         self.printTitle = ctk.CTkLabel(self.upload_frame, text="Vybrat tiskárnu", font=("Roboto", 15), text_color="white", wraplength=320)
         self.printTitle.grid(row=1, column=0, padx=150, pady=20, sticky="ew", columnspan=3)
         self.combobox = ctk.CTkComboBox(self.upload_frame, values=printers, corner_radius=20)
         self.combobox.set(def_printer)
-        self.combobox.grid(row=2, column=0, padx=70, pady=20, sticky="ew", columnspan=3)
+        self.combobox.grid(row=2, column=0, padx=70, pady=20, sticky="ew", columnspan=3
+        '''
 
     def getData(self):
         if os.path.exists(self.dataPath):
@@ -143,7 +143,6 @@ class App(ctk.CTk):
 
     def upload(self):
         filePath = filedialog.askopenfilename(initialdir="/", filetypes=[('Tabulky', '.xlsx .xsl .xlsm .odf .ods .odt')])
-        print(filePath)
         try:
             self.ordersPath = filePath
             self.hasOrders = True
@@ -176,7 +175,7 @@ def sort_data(ui, previewsPath, ordersPath):
         df = pd.read_excel(ordersPath)
         num_row = df.shape[0]
 
-        sort_index = df.index[df.iloc[:, 0] == "VÝROBEK"]     ### Změníme na "VÝKON"/"VÝROBEK"
+        sort_index = df.index[df.iloc[:, 0] == "VÝKON"]
         df_head = df.iloc[sort_index[0], :].tolist()
 
         for x in search_column:
@@ -184,22 +183,34 @@ def sort_data(ui, previewsPath, ordersPath):
         print(column_index)
         for i in range(len(sort_index)-1):
             data = []
-            for order in df.iloc[sort_index[i]+1:sort_index[i+1],:].values.tolist():
-                if not type(order[2]) == int: 
-                    print(order)
-                if type(order[2]) == int:   
-                    imgPath = next(Path(previewsPath).glob(f'{order[column_index[0]]}.*'), None) 
-                    x = Label(order[column_index[0]], str(imgPath),order[column_index[1]], order[column_index[2]])
+            for order in df.iloc[sort_index[i]+1:sort_index[i+1],column_index].values.tolist():
+                if type(order[0]) == float: 
+                    break
+                else:
+                    if any(isinstance(y, float) for y in order):
+                        ui.viewMSG(ui.upload_frame, f"Chyba: chybí údaje v řádcích", 20, "red")
+                        return   
+                    imgPath = next(Path(previewsPath).glob(f'{order[0]}.*'), None) 
+                    if imgPath == None:
+                        ui.viewMSG(ui.upload_frame, f"Chyba: výkres výrobku {order[0]} není evidován", 20, "red")
+                        return
+                    x = Label(order[0], str(imgPath),order[1], order[2])
                     data.append(x)
             labels[data[0].place] = data
 
         data = []
-        for order in df.iloc[sort_index[len(sort_index)-1]+1:num_row,:].values.tolist():
-            if not type(order[2]) == int: 
-                print(order)
-            if type(order[2]) == int:    
-                imgPath = next(Path(previewsPath).glob(f'{order[column_index[0]]}.*'), None) 
-                x = Label(order[column_index[0]], str(imgPath),order[column_index[1]], order[column_index[2]])
+        for order in df.iloc[sort_index[len(sort_index)-1]+1:num_row,column_index].values.tolist():
+            if type(order[0]) == float: 
+                break
+            else:    
+                if any(isinstance(y, float) for y in order):
+                        ui.viewMSG(ui.upload_frame, f"Chyba: chybí údaje v řádcích", 20, "red")
+                        return   
+                imgPath = next(Path(previewsPath).glob(f'{order[0]}.*'), None) 
+                if imgPath == None:
+                    ui.viewMSG(ui.upload_frame, f"Chyba: výkres výrobku {order[0]} není evidován", 20, "red")
+                    return
+                x = Label(order[0], str(imgPath),order[1], order[2])
                 data.append(x)
 
         labels[data[0].place] = data
@@ -228,8 +239,8 @@ def renderMain(ui: App):
             tpl = DocxTemplate(template_path)
             for label in range(len(group_label)): 
                 context_dic[f"productID{label+1}"] = group_label[label].productID
-
-                image = InlineImage(tpl, group_label[label].previewPath, width=Mm(65), height=Mm(35))
+                image = InlineImage(tpl, group_label[label].previewPath, width=Mm(57), height=Mm(36))
+                
                 context_dic[f"previewPath{label+1}"] = image
 
                 context_dic[f"units{label+1}"] = group_label[label].units
@@ -247,11 +258,11 @@ def renderMain(ui: App):
     print(filesPath)
     ui.viewPrint()
     
-    
-
 def printLabels(ui: App, type):
     try:     
         filename = filesPath[type]
+        os.startfile(filename)
+        '''
         select_printer = ui.combobox.get()
         win32print.SetDefaultPrinter(select_printer)
         win32api.ShellExecute(
@@ -262,6 +273,7 @@ def printLabels(ui: App, type):
             ".",
             0
         )
+        '''
     except Exception as e:
         ui.viewMSG(ui.upload_frame, f"Chyba: {e}", 20, "red")
 
@@ -272,7 +284,7 @@ if __name__ == "__main__":
     except Exception:
         base_path = os.path.abspath(".")
 
-    template_path = os.path.join(base_path, "templateNew.docx")
+    template_path = os.path.join(base_path, "templateNew2.docx")
     icon_path = os.path.join(base_path, "icon.ico")
 
     change_dir_to = os.chdir(f'{Path.home()}/AppData/Roaming')
@@ -282,5 +294,4 @@ if __name__ == "__main__":
         pass
     changed_dir_to = os.chdir("Štítky-Generátor")
     app = App()
-    #app.protocol("WM_DELETE_WINDOW", on_close(app))
     app.mainloop()
