@@ -1,4 +1,4 @@
-Project for Agrol (http://agrol.cz/)
+Project for [Agrol](http://agrol.cz/)
 
 # How it works
 
